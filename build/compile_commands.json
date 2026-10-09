@@ -1,0 +1,12 @@
+[
+{
+  "directory": "/home/cuda_learning/build",
+  "command": "/usr/local/cuda/bin/nvcc -forward-unknown-to-host-compiler  -I/usr/local/cuda/include -I/home/cuda_learning/src  --generate-code=arch=compute_75,code=[compute_75,sm_75] -x cu -c /home/cuda_learning/sgemm.cu -o CMakeFiles/sgemm.dir/sgemm.cu.o",
+  "file": "/home/cuda_learning/sgemm.cu"
+},
+{
+  "directory": "/home/cuda_learning/build",
+  "command": "/usr/local/cuda/bin/nvcc -forward-unknown-to-host-compiler  -I/usr/local/cuda/include -I/home/cuda_learning/src  --generate-code=arch=compute_75,code=[compute_75,sm_75] -x cu -c /home/cuda_learning/src/runner.cu -o CMakeFiles/sgemm.dir/src/runner.cu.o",
+  "file": "/home/cuda_learning/src/runner.cu"
+}
+]
