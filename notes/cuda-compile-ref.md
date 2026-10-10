@@ -102,8 +102,8 @@ nvidia-smi --query-gpu=name,compute_cap --format=csv
 │   ├── runner.cu          # 工具函数 + kernel launch 封装
 │   ├── runner.cuh         # 工具函数头文件
 │   └── kernels/
-│       ├── 1-naive.cuh    # 最基础的 naive kernel
-│       └── ...            # 其他优化版本
+│       ├── 1-naive.cuh                # 最基础的 naive kernel
+│       └── 2_kernel_global_mem_coalesce.cuh  # 全局内存合并访存优化版
 ├── build/                 # 编译输出目录
 └── notes/                 # 学习笔记
 ```
@@ -122,4 +122,49 @@ nvidia-smi --query-gpu=name,compute_cap --format=csv
 |:----:|:-------|
 | 0 | cuBLAS (参考实现) |
 | 1 | naive baseline |
-| 2+ | 优化版本 |
+| 2 | global memory coalesce (一维 block, 按列连续访存) |
+
+## 编译踩坑记录
+
+### 1. 头文件必须用引号 + 相对路径
+
+`#include <runner.cuh>` ❌ —— 尖括号只搜系统路径，找不到项目内的头文件
+`#include "src/runner.cuh"` ✅ —— 引号会优先搜源文件所在目录
+
+如果用 CMake 编译（设了 `-I src`），两种写法都可以；**直接 `nvcc` 必须用引号版本**。
+
+### 2. 多文件编译不能缺 `runner.cu`
+
+```bash
+# ❌ 只编译 sgemm.cu 会报链接错误
+nvcc sgemm.cu -lcublas -arch=sm_75 -o sgemm
+
+# ✅ 必须同时编译 src/runner.cu
+nvcc sgemm.cu src/runner.cu -lcublas -arch=sm_75 -o sgemm
+```
+
+`main()` 在 `sgemm.cu`，但 kernel launch 封装和辅助函数（`run_kernel`、`cudaCheck`、`randomize_matrix` 等）在 `src/runner.cu`。
+
+### 3. `throw std::invalid_argument` 需要 `<stdexcept>`
+
+`runner.cu` 里用了 `throw std::invalid_argument(...)`，必须 `#include <stdexcept>`，否则编译报错。
+
+### 4. `cudaCheck` 宏与函数同名
+
+```c
+#define cudaCheck(err) (cudaCheck(err, __FILE__, __LINE__))
+```
+
+宏名和函数名一样，利用 C 预处理器的"禁止自展开"特性工作——展开一次后自动解析为函数调用。功能正常但容易看晕，如果想更清晰可以改名：
+```c
+#define CUDA_CHECK(err) (cudaCheck(err, __FILE__, __LINE__))
+```
+
+### 5. `-arch` 必须匹配实际 GPU
+
+RTX 2080 Ti 是 SM 7.5，用 `-arch=sm_75`。设错架构即使编译通过，运行时也会报错（`no kernel image is available for execution`）。
+
+查 GPU 架构：
+```bash
+nvidia-smi --query-gpu=name,compute_cap --format=csv
+```

@@ -197,6 +197,8 @@ CMakeFiles/sgemm.dir/src/runner.cu.o : /home/cuda_learning/src/runner.cu \
     /usr/local/cuda/include/cuda_fp16.hpp \
     /usr/local/cuda/include/cuda_bf16.h \
     /usr/local/cuda/include/cuda_bf16.hpp \
+    /home/cuda_learning/src/kernels/2_kernel_global_mem_coalesce.cuh \
+    /usr/include/c++/11/cassert \
     /home/cuda_learning/src/runner.cuh \
     /usr/include/c++/11/fstream \
     /usr/include/c++/11/istream \
