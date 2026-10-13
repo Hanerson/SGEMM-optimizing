@@ -136,6 +136,16 @@ void run_sgemm_coalesce(int M, int N, int K, float alpha, float *A, float *B, fl
   sgemm_global_mem_coalesce<32><<<gridDim, blockDim>>>(M, N, K, alpha, A, B, beta, C);
 }
 
+void run_sgemm_shared_mem_block(int M, int N, int K, float alpha, float *A,
+                                float *B, float beta, float *C) {
+  dim3 gridDim(CEIL_DIV(M, 32), CEIL_DIV(N, 32));
+  dim3 blockDim(32 * 32);
+  cudaFuncSetAttribute(sgemm_shared_mem_block<32>, cudaFuncAttributePreferredSharedMemoryCarveout, cudaSharedmemCarveoutMaxShared);
+  
+  sgemm_shared_mem_block<32>
+      <<<gridDim, blockDim>>>(M, N, K, alpha, A, B, beta, C);
+}
+
 // ==================== 总调度 ====================
 
 void run_kernel(int kernel_num, int M, int N, int K, float alpha, float *A,
@@ -149,6 +159,10 @@ void run_kernel(int kernel_num, int M, int N, int K, float alpha, float *A,
     break;
   case 2:
     run_sgemm_coalesce(M, N, K, alpha, A, B, beta, C);
+    break;
+
+  case 3:
+    run_sgemm_shared_mem_block(M, N, K, alpha, A, B, beta, C);
     break;
   default:
     throw std::invalid_argument("Unknown kernel number");
