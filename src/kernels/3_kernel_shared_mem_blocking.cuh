@@ -7,48 +7,47 @@
 #include <cuda_runtime.h>
 
 template <const int BLOCKSIZE>
-__global__ void sgemm_shared_mem_block(int M, int N, int K, float alpha,
-                                       const float *A, const float *B,
-                                       float beta, float *C) {
-  // the output block that we want to compute in this threadblock
-  const uint cRow = blockIdx.x;
-  const uint cCol = blockIdx.y;
+__global__ void sgemm_shared_mem_block(int M, int N, int K, float alpha, const float *A, const float *B, float beta, float *C){
 
-  // allocate buffer for current block in fast shared mem
-  // shared mem is shared between all threads in a block
-  __shared__ float As[BLOCKSIZE * BLOCKSIZE];
-  __shared__ float Bs[BLOCKSIZE * BLOCKSIZE];
+  //here calculate the block grid vector
+  const uint block_x = blockIdx.x;
+  const uint block_y = blockIdx.y;
 
-  // the inner row & col that we're accessing in this thread
+  //then transfer the data from global memory to shared memory which is much faster
+  __shared__ float shared_A[BLOCKSIZE * BLOCKSIZE];
+  __shared__ float shared_B[BLOCKSIZE * BLOCKSIZE];
+
+  //calculate the starting index of a block(advance the pointer to the starting positions)
+  A += block_x * BLOCKSIZE * K;                      // row=block_x, col=0
+  B += block_y * BLOCKSIZE;                          // row=0, col=block_y
+  C += block_x * BLOCKSIZE * N + block_y * BLOCKSIZE;// row=block_x, col=block_y
+
+  //calculate the thread's row and column within the block
   const uint threadCol = threadIdx.x % BLOCKSIZE;
   const uint threadRow = threadIdx.x / BLOCKSIZE;
 
-  // advance pointers to the starting positions
-  A += cRow * BLOCKSIZE * K;                    // row=cRow, col=0
-  B += cCol * BLOCKSIZE;                        // row=0, col=cCol
-  C += cRow * BLOCKSIZE * N + cCol * BLOCKSIZE; // row=cRow, col=cCol
-
+  //initialize the result to zero
   float tmp = 0.0;
-  for (int bkIdx = 0; bkIdx < K; bkIdx += BLOCKSIZE) {
-    // Have each thread load one of the elements in A & B
-    // Make the threadCol (=threadIdx.x) the consecutive index
-    // to allow global memory access coalescing
-    As[threadRow * BLOCKSIZE + threadCol] = A[threadRow * K + threadCol];
-    Bs[threadRow * BLOCKSIZE + threadCol] = B[threadRow * N + threadCol];
+  for(int i = 0; i < K; i += BLOCKSIZE) {
+    //load the data from global memory to shared memory
+    shared_A[threadRow * BLOCKSIZE + threadCol] = A[threadRow * K + threadCol];
+    shared_B[threadRow * BLOCKSIZE + threadCol] = B[threadRow * N + threadCol];
 
-    // block threads in this block until cache is fully populated
+    //wait for all threads to finish loading data into shared memory
     __syncthreads();
-    A += BLOCKSIZE;
-    B += BLOCKSIZE * N;
 
-    // execute the dotproduct on the currently cached block
-    for (int dotIdx = 0; dotIdx < BLOCKSIZE; ++dotIdx) {
-      tmp += As[threadRow * BLOCKSIZE + dotIdx] *
-             Bs[dotIdx * BLOCKSIZE + threadCol];
+    A += BLOCKSIZE; //advance the pointer to the next block of A
+    B += BLOCKSIZE * N; //advance the pointer to the next block of B
+
+    //perform the multiplication and accumulation
+    for (int j = 0; j < BLOCKSIZE; ++j) {
+        tmp += shared_A[threadRow * BLOCKSIZE + j] * shared_B[j * BLOCKSIZE + threadCol];
     }
-    // need to sync again at the end, to avoid faster threads
-    // fetching the next block into the cache before slower threads are done
+
+    //wait for all threads to finish computing before loading new data into shared memory
     __syncthreads();
   }
+
+  //write the result back to global memory
   C[threadRow * N + threadCol] = alpha * tmp + beta * C[threadRow * N + threadCol];
 }
