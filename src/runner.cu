@@ -146,6 +146,17 @@ void run_sgemm_shared_mem_block(int M, int N, int K, float alpha, float *A,
       <<<gridDim, blockDim>>>(M, N, K, alpha, A, B, beta, C);
 }
 
+void runSgemm1DBlocktiling(int M, int N, int K, float alpha, float *A, float *B,
+                           float beta, float *C) {
+  const uint BM = 64;
+  const uint BN = 64;
+  const uint BK = 8;
+  const uint TM = 8;
+  dim3 gridDim(CEIL_DIV(N, BN), CEIL_DIV(M, BM));
+  dim3 blockDim((BM * BN) / TM);
+  sgemm1DBlocktiling<BM, BN, BK, TM>
+      <<<gridDim, blockDim>>>(M, N, K, alpha, A, B, beta, C);
+}
 // ==================== 总调度 ====================
 
 void run_kernel(int kernel_num, int M, int N, int K, float alpha, float *A,
@@ -160,9 +171,11 @@ void run_kernel(int kernel_num, int M, int N, int K, float alpha, float *A,
   case 2:
     run_sgemm_coalesce(M, N, K, alpha, A, B, beta, C);
     break;
-
   case 3:
     run_sgemm_shared_mem_block(M, N, K, alpha, A, B, beta, C);
+    break;
+  case 4:
+    runSgemm1DBlocktiling(M, N, K, alpha, A, B, beta, C);
     break;
   default:
     throw std::invalid_argument("Unknown kernel number");
