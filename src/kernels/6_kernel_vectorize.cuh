@@ -8,7 +8,9 @@
 #include <cuda_runtime.h>
 
 template <const int BM, const int BN, const int BK, const int TM, const int TN>
-__global__ void sgemmVectorize(int M, int N, float alpha, const float *A. const float *B. float beta, float *C){
+
+//in case we use reinterpret_cast, here we didn't put const before pointer to A and B
+__global__ void sgemmVectorize(int M, int N, int K, float alpha, float *A, float *B, float beta, float *C){
   //as always
   //first calculate the block index (coordinate)
 
@@ -27,9 +29,9 @@ __global__ void sgemmVectorize(int M, int N, float alpha, const float *A. const 
   __shared__ float Bs[BK * BN];
 
   // Move blocktile to beginning of A's row and B's column
-  A += cRow * BM * K;
-  B += cCol * BN;
-  C += cRow * BM * N + cCol * BN;
+  A += blockRow * BM * K;
+  B += blockCol * BN;
+  C += blockRow * BM * N + blockCol * BN;
 
   //then we need to calculate the inner thread coordinate
   //here is the first optimize method 
@@ -49,8 +51,55 @@ __global__ void sgemmVectorize(int M, int N, float alpha, const float *A. const 
 
   //block sliding window: maybe this name is more sensible
   for(uint bkIdx = 0; bkIdx < K; bkIdx += BK){
-    //TODO: data transfer and core calculate
+    //data transfer and core calculate
+    float4 tmp = reinterpret_cast<float4 *>(&A[innerRowA * K + innerColA * 4])[0];
+
+    //here we consider As as a BK * BM matrix
+    //we can also say that we transposed As
+    As[(innerColA * 4 + 0) * BM + innerRowA] = tmp.x;
+    As[(innerColA * 4 + 1) * BM + innerRowA] = tmp.y;
+    As[(innerColA * 4 + 2) * BM + innerRowA] = tmp.z;
+    As[(innerColA * 4 + 3) * BM + innerRowA] = tmp.w;
+
+    reinterpret_cast<float4 *>(&Bs[innerRowB * BN + innerColB * 4])[0] = reinterpret_cast<float4 *>(&B[innerRowB * N + innerColB * 4])[0];
+    __syncthreads();
+
+
+    //advance the pointer
+    A += BK;
+    B += BK * N;
+
+    // calculate per-thread results
+    for (uint dotIdx = 0; dotIdx < BK; ++dotIdx) {
+      // block into registers
+      for (uint i = 0; i < TM; ++i) {
+        regA[i] = As[dotIdx * BM + threadRow * TM + i];
+      }
+      for (uint i = 0; i < TN; ++i) {
+        regB[i] = Bs[dotIdx * BN + threadCol * TN + i];
+      }
+      for (uint resIdxM = 0; resIdxM < TM; ++resIdxM) {
+        for (uint resIdxN = 0; resIdxN < TN; ++resIdxN) {
+          threadResults[resIdxM * TN + resIdxN] += regA[resIdxM] * regB[resIdxN];
+        }
+      }
+    }
+
+    __syncthreads();
   }
 
-  //TODO: write back the caiculate date
+  // write out the results
+  for (uint resIdxM = 0; resIdxM < TM; resIdxM += 1) {
+    for (uint resIdxN = 0; resIdxN < TN; resIdxN += 4) {
+      // load C vector into registers
+      float4 tmp = reinterpret_cast<float4 *>(&C[(threadRow * TM + resIdxM) * N + threadCol * TN + resIdxN])[0];
+      // perform GEMM update in reg
+      tmp.x = alpha * threadResults[resIdxM * TN + resIdxN] + beta * tmp.x;
+      tmp.y = alpha * threadResults[resIdxM * TN + resIdxN + 1] + beta * tmp.y;
+      tmp.z = alpha * threadResults[resIdxM * TN + resIdxN + 2] + beta * tmp.z;
+      tmp.w = alpha * threadResults[resIdxM * TN + resIdxN + 3] + beta * tmp.w;
+      // write back
+      reinterpret_cast<float4 *>(&C[(threadRow * TM + resIdxM) * N + threadCol * TN + resIdxN])[0] = tmp;
+    }
+  }
 }
