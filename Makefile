@@ -1,10 +1,13 @@
+
+# ===== Auto-generated push target =====
+# Usage: make submit MSG="your message"
 MSG ?= auto commit
 submit:
 	@if [ -z "$(MSG)" ]; then \
-		echo "错误：请指定提交信息，如 make submit MSG=\"xxx\""; \
+		echo "Error: missing commit message. Use: make submit MSG=\"xxx\""; \
 		exit 1; \
 	fi
 	git add -A
-	git commit -m "$(MSG)" || echo "没有需要提交的更改"
+	git commit -m "$(MSG)" || echo "No changes to commit"
 	git push origin HEAD
-	@echo "✅ 推送完成"
+	@echo "Push complete"
