@@ -182,6 +182,29 @@ void runSgemm2DBlocktiling(int M, int N, int K, float alpha, float *A, float *B,
   }
 }
 
+void runSgemmVectorize(int M, int N, int K, float alpha, float *A, float *B, float beta, float *C) {
+  const uint BK = 8;
+  const uint TM = 8;
+  const uint TN = 8;
+  if (M >= 128 and N >= 128) {
+    const uint BM = 128;
+    const uint BN = 128;
+    dim3 gridDim(CEIL_DIV(N, BN), CEIL_DIV(M, BM));
+    dim3 blockDim((BM * BN) / (TM * TN));
+    sgemmVectorize<BM, BN, BK, TM, TN>
+        <<<gridDim, blockDim>>>(M, N, K, alpha, A, B, beta, C);
+  } else {
+    // this is a hacky solution to the underlying problem
+    // of not having proper bounds checking in the kernel
+    const uint BM = 64;
+    const uint BN = 64;
+    dim3 gridDim(CEIL_DIV(N, BN), CEIL_DIV(M, BM));
+    dim3 blockDim((BM * BN) / (TM * TN));
+    sgemmVectorize<BM, BN, BK, TM, TN>
+        <<<gridDim, blockDim>>>(M, N, K, alpha, A, B, beta, C);
+  }
+}
+
 // ==================== 总调度 ====================
 
 void run_kernel(int kernel_num, int M, int N, int K, float alpha, float *A,
@@ -205,6 +228,9 @@ void run_kernel(int kernel_num, int M, int N, int K, float alpha, float *A,
   case 5:
     runSgemm2DBlocktiling(M, N, K, alpha, A, B, beta, C);
     break;
+  case 6:
+    runSgemmVectorize(M, N, K, alpha, A, B, beta, C);
+      break;
   default:
     throw std::invalid_argument("Unknown kernel number");
   }
