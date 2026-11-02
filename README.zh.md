@@ -209,6 +209,10 @@ python3 scripts/plot_results.py    # 需要 matplotlib
 
 换一张卡重跑 `make bench` 并更新该 JSON，图表会随之刷新，对比也变得更明确。
 
+## 许可
+
+[MIT](LICENSE) © 2026 Hanerson
+
 ## 参考
 
 1. Simon Boehm — [How to Optimize a CUDA Matmul Kernel for cuBLAS-like Performance: a Worklog](https://siboehm.com/articles/22/CUDA-MMM)

@@ -234,6 +234,10 @@ python3 scripts/plot_results.py    # requires matplotlib
 Re-running `make bench` on another GPU and updating that JSON refreshes the
 figures and makes the comparison explicit.
 
+## License
+
+[MIT](LICENSE) © 2026 Hanerson
+
 ## References
 
 1. Simon Boehm — [How to Optimize a CUDA Matmul Kernel for cuBLAS-like Performance: a Worklog](https://siboehm.com/articles/22/CUDA-MMM)
