@@ -1,0 +1,72 @@
+{
+  "meta": {
+    "gpu": "NVIDIA GeForce RTX 4090",
+    "architecture": "AD102 (sm_89)",
+    "sm_count": 128,
+    "memory_total_mib": 24564,
+    "driver_version": "570.124.06",
+    "cuda_version": "12.8",
+    "nvcc_version": "V12.8.61",
+    "cpu": "Intel Xeon Platinum 8358P @ 2.60 GHz",
+    "os": "Ubuntu 22.04 (container), Linux 5.4.0-100-generic",
+    "compiler": "gcc 13.3.0, cmake 3.31.4",
+    "build_arch": 89,
+    "measured_on": "2026-11-02",
+    "method": "cudaEvent timing over 50 kernel launches per size; each cell is the median of 3 full passes",
+    "alpha": 0.5,
+    "beta": 3.0,
+    "nominal_peak_tflops": 82.6,
+    "memory_bandwidth_gbps": 1008
+  },
+  "sizes": [128, 256, 512, 1024, 2048, 4096],
+  "kernels": [
+    {
+      "id": "k0",
+      "name": "cuBLAS",
+      "short": "cuBLAS",
+      "gflops": [4.6, 196.0, 21174.8, 42661.9, 54333.9, 53535.1]
+    },
+    {
+      "id": "k1",
+      "name": "naive",
+      "short": "naive",
+      "gflops": [73.5, 301.4, 613.1, 626.1, 668.0, 668.7]
+    },
+    {
+      "id": "k2",
+      "name": "global memory coalescing",
+      "short": "coalesce",
+      "gflops": [500.6, 2243.8, 4893.0, 5068.9, 5189.6, 5230.5]
+    },
+    {
+      "id": "k3",
+      "name": "shared memory blocking",
+      "short": "shared mem",
+      "gflops": [604.6, 2773.0, 6122.5, 6480.4, 6556.1, 6461.4]
+    },
+    {
+      "id": "k4",
+      "name": "1D register blocking",
+      "short": "1D blocktiling",
+      "gflops": [379.2, 1710.2, 7298.5, 18663.5, 20074.6, 18958.3]
+    },
+    {
+      "id": "k5",
+      "name": "2D register blocking",
+      "short": "2D blocktiling",
+      "gflops": [176.9, 847.6, 3783.1, 15530.7, 34621.0, 35940.0]
+    },
+    {
+      "id": "k6",
+      "name": "vectorized loads",
+      "short": "vectorize",
+      "gflops": [226.3, 1017.0, 4299.1, 17688.6, 43898.8, 42325.1]
+    },
+    {
+      "id": "k10",
+      "name": "warp tiling",
+      "short": "warptiling",
+      "gflops": [226.2, 1085.7, 4834.8, 20429.4, 48113.6, 48247.3]
+    }
+  ]
+}

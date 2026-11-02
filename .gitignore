@@ -23,5 +23,13 @@ matrixValidationFailure.txt
 .vscode/
 *.swp
 
+# Python
+__pycache__/
+*.pyc
+
+# Figures are committed as SVG (crisp at any zoom); the PNG copies exist only
+# for quick local inspection and would duplicate ~170 KB in the repository.
+figs/*.png
+
 # macOS
 .DS_Store

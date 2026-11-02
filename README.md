@@ -1,33 +1,31 @@
-# SGEMM 优化实践：从 naive 到 warptiling
+# SGEMM from Scratch: A Step-by-Step CUDA Optimization Study
 
-一个 FP32 SGEMM（单精度矩阵乘）的渐进优化项目。七个 CUDA kernel 从最朴素的实现出发，
-一步步走到接近 cuBLAS 的水平，每一步只引入一个核心思想：合并访存、共享内存分块、
-寄存器分块、向量化、warp 分块。
+**English** | [中文](README.zh.md)
 
-所有性能数据都是在 **NVIDIA GeForce RTX 4090** 上实测得到的，不是估算值，也不是从别处
-抄来的参考数字。
+A single-precision matrix multiplication (SGEMM) kernel taken from a naive
+implementation to **90.1% of cuBLAS FP32 throughput** on an NVIDIA RTX 4090,
+through seven progressively optimized kernels. Each step introduces exactly one
+idea — memory coalescing, shared-memory blocking, register blocking,
+vectorization, warp tiling — and each step is measured, not estimated.
 
-## 测试环境
+```
+72.2× faster than the naive baseline
+```
 
-| 项目 | 配置 |
-| --- | --- |
-| GPU | **NVIDIA GeForce RTX 4090**（AD102，`sm_89`，128 SM） |
-| 显存 | 24564 MiB（24 GB GDDR6X） |
-| 驱动 / CUDA | 570.124.06 / 12.8（`nvcc` V12.8.61） |
-| 主机 | Intel Xeon Platinum 8358P @ 2.60 GHz，128 线程，20 GB 内存 |
-| 系统 | Ubuntu 22.04 容器（kernel 5.4.0-100-generic） |
-| 编译 | `cmake 3.31.4` + `gcc 13.3.0`，`-DCUDA_COMPUTE_CAPABILITY=89` |
+## Results
 
-> 镜像里 `nvcc` 不在 `PATH` 上，`make` 会自动回退到 `/usr/local/cuda/bin/nvcc`，
-> 也可以用 `make build NVCC=/path/to/nvcc` 指定。
+Measured on an RTX 4090 at 4096 × 4096 × 4096, FP32. Every number in this
+repository was produced by the benchmark harness in this repository on the
+hardware listed below.
 
-## 性能结果
+![SGEMM throughput vs. problem size](figs/performance_vs_size.svg)
 
-测试规模 M = N = K，FP32，`alpha = 0.5`、`beta = 3.0`，每个尺寸 50 次 `cudaEvent` 计时
-取平均。单位 GFLOPS。
+![SGEMM throughput at 4096³ vs. cuBLAS](figs/performance_at_4096.svg)
 
-表中每个格子是 **三轮完整扫描的中位数**。同一格的多轮极差大多在 1% 以内，
-少数格子更高（k10 在 4096 维为 4.4%），单轮采样不足以代表真实水平。
+### Throughput (GFLOPS)
+
+Each cell is the median of three full passes. Most cells vary by less than 1%
+between passes; the noisiest (k10 at 4096³) varies by 4.4%.
 
 | kernel | 128 | 256 | 512 | 1024 | 2048 | 4096 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -40,9 +38,9 @@
 | k6 vectorize | 226.3 | 1017.0 | 4299.1 | 17688.6 | 43898.8 | 42325.1 |
 | k10 warptiling | 226.2 | 1085.7 | 4834.8 | 20429.4 | 48113.6 | **48247.3** |
 
-### 4096³ 汇总
+### Summary at 4096³
 
-| kernel | GFLOPS | 占 cuBLAS | 占标称峰值 | 耗时 | 相对上一级 |
+| kernel | GFLOPS | vs. cuBLAS | vs. nominal peak | Time / call | Speed-up over previous |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | k0 cuBLAS | 53535.1 | 100.0% | 64.8% | 2.57 ms | — |
 | k1 naive | 668.7 | 1.2% | 0.8% | 205.5 ms | — |
@@ -53,37 +51,92 @@
 | k6 vectorize | 42325.1 | 79.1% | 51.2% | 3.25 ms | 1.18× |
 | k10 warptiling | 48247.3 | 90.1% | 58.4% | 2.85 ms | 1.14× |
 
-- **k10 达到 cuBLAS 的 90.1%**，相对 naive 提速 **72.2×**
-- cuBLAS 跑到标称峰值的 64.8%，k10 到 58.4%
-- 「占标称峰值」按 RTX 4090 FP32 标称 82.6 TFLOPS 计算
-  （128 SM × 128 lane × 2 FLOP × 2.52 GHz 参考加速频率）
+`vs. nominal peak` uses 82.6 TFLOPS, the RTX 4090 FP32 peak at its 2.52 GHz
+reference boost clock (128 SM × 128 lanes × 2 FLOP).
 
-### 两条曲线
+**Reading the table.** The two ends of the size range tell different stories.
+At 128³ the fastest kernel is k3, because every kernel is dominated by launch
+and start-up overhead and the tiling optimizations have nothing to work on. At
+4096³ the ranking inverts and k10 wins by a wide margin. Any claim about "the
+fastest kernel" is meaningless without the problem size attached.
 
-横向看（同一 kernel 随规模变化）：k1~k3 在 1024 维之后基本走平，说明它们已经撞到各自的
-结构性上限；k4~k10 则一直涨到 2048 维才饱和。
+## Test platform
 
-纵向看（同一规模下各 kernel 的排名）：128 维时最优的是 k3（604.6），4096 维时最优的是
-k10（48247.3）。**小尺寸和大尺寸的排名不同**，所以「哪个 kernel 最快」必须带上规模才有
-意义。
+| | |
+| --- | --- |
+| GPU | **NVIDIA GeForce RTX 4090** (AD102, `sm_89`), 128 SMs, 24 GB GDDR6X |
+| Driver / CUDA | 570.124.06 / 12.8 (`nvcc` V12.8.61) |
+| CPU | Intel Xeon Platinum 8358P @ 2.60 GHz, 128 threads |
+| OS | Ubuntu 22.04 container, Linux 5.4.0-100-generic |
+| Toolchain | `cmake` 3.31.4, `gcc` 13.3.0, built for `sm_89` |
 
-## 快速开始
+## Optimization walkthrough
+
+Each kernel changes one thing. Speed-ups below are measured at 4096³.
+
+### k1 → k2 · Coalesced global memory access · **7.82×**
+
+k1 maps `x = threadIdx.x` to matrix rows, so the 32 lanes of a warp read 32
+different rows of A, `K × 4 B` apart. One load becomes 32 separate 32-byte
+transactions, wasting roughly 7/8 of each cache line.
+
+k2 flattens the block and lets each warp span consecutive columns of B while
+broadcasting A. The arithmetic is identical; only the address pattern changed,
+and throughput rose 7.82×. This is the clearest demonstration in the project
+that GPU performance is decided by memory access before anything else.
+
+### k2 → k3 · Shared-memory blocking · **1.24×**
+
+Each block stages 32 × 32 tiles of A and B into shared memory and reuses them
+across the block. The gain is modest because k2's redundant reads were already
+largely absorbed by L1/L2, and because a 32 × 32 tile only reaches an arithmetic
+intensity of 8 FLOP/B — far below this card's balance point.
+
+### k3 → k4 · 1D register blocking · **2.93×**
+
+Each thread now computes a column of 8 output elements, so one value of B feeds
+8 FMAs. The shared-memory-load to FMA ratio drops from 2.0 to 1.125. This is the
+first genuine register-level optimization: data moves one level closer to the
+compute units.
+
+### k4 → k5 · 2D register blocking · **1.90×**
+
+The 8 × 1 column becomes an 8 × 8 tile. Each inner step loads 16 operands and
+issues 64 FMAs, cutting the load/FMA ratio to 0.25 and reusing both A and B.
+
+The gain is smaller than the 4.5× drop in shared-memory loads, which is Amdahl's
+law in practice: only the load path was optimized while register pressure rose
+to roughly 90 registers per thread.
+
+### k5 → k6 · Vectorized loads · **1.18×**
+
+`float4` loads collapse four scalar loads into one 128-bit instruction, and A is
+transposed in shared memory so its reads can also use `LDS.128`.
+
+Worth noting that vectorization is a late-stage optimization. FMA count and
+shared-memory bandwidth are unchanged; only instruction count falls, so it pays
+off only once the kernel is already compute-dense.
+
+### k6 → k10 · Warp tiling · **1.14×**
+
+Warp is now an explicit level of the hierarchy: 128 threads form 4 warps, each
+owning a 64 × 64 sub-tile of C, each thread accumulating 128 results.
+
+Occupancy drops to 17–25%, yet performance peaks. With 128 independent FMAs per
+thread the pipeline stays full without needing more warps — instruction-level
+parallelism substitutes for thread-level parallelism. Occupancy is a means, not
+a goal.
+
+## Build and run
 
 ```bash
-# 编译（默认按 sm_89 构建，可用 CUDA_ARCH 覆盖）
-make build
-
-# 跑单个 kernel 的完整尺寸扫描（0 是 cuBLAS，1/2/3/4/5/6/10 是自研 kernel）
-make run KERNEL=10
-
-# 跑全部 kernel，输出上表用到的数据
-make bench
-
-# 清理
+make build                 # configure + build for sm_89
+make run KERNEL=10         # sweep all sizes with one kernel
+make bench                 # run every kernel (produces the tables above)
 make clean
 ```
 
-不用 `make` 也可以直接走 CMake：
+Equivalent without `make`:
 
 ```bash
 export CUDACXX=/usr/local/cuda/bin/nvcc
@@ -93,157 +146,99 @@ cmake --build build -j
 ./build/sgemm 10
 ```
 
-程序参数是 kernel 编号：`0` 走 cuBLAS，`1 2 3 4 5 6 10` 走自研实现。
-每次运行依次测试 128、256、512、1024、2048、4096 六个尺寸，每个尺寸先与 cuBLAS
-校验正确性，再做 50 次计时。
+`KERNEL=0` runs cuBLAS; `1 2 3 4 5 6 10` run the hand-written kernels. Each
+invocation sweeps 128, 256, 512, 1024, 2048 and 4096, verifying every size
+against cuBLAS before timing it.
 
-## 优化路线
+`CUDA_COMPUTE_CAPABILITY` defaults to 75 and can be overridden for any
+architecture — building for an older target still runs via PTX JIT, but then the
+kernel being measured is not the one the driver would choose natively.
 
-每一站只引入一个新思想，下面的倍数来自上表 4096³ 的实测。
-
-### k1 → k2：合并访存（7.82×）
-
-k1 的线程映射是 `x = threadIdx.x`（行）、`y = threadIdx.y`（列），一个 warp 的 32 个 lane
-落在 A 的 32 个不同行上，地址相差 `K×4B`，一次 load 被拆成 32 次 32B 事务。
-
-k2 把映射换成一维、lane 沿列连续：读 A 变成同一地址（广播），读 B 变成连续 128B
-（一次事务）。计算量完全没变，只是地址变了，就快了 7.82 倍——不是算得更快，
-是同样的数据少搬了约 8 倍。
-
-### k2 → k3：共享内存分块（1.24×）
-
-每个 block 先把 A、B 的 32×32 切片搬进 SMEM，再在 SMEM 上做点积，把重复的 GMEM 读取
-变成一次搬运。
-
-收益只有 1.24 倍，因为 k2 的重复读很多已经在 L1/L2 命中，SMEM 只是把隐式缓存换成显式
-缓存；而且 32×32 的 tile 算术强度只有 8 FLOP/B，远低于这张卡的平衡点。
-
-### k3 → k4：1D 寄存器分块（2.93×）
-
-每个线程从「算 1 个 C」改成「算同一列的 8 个 C」。B 的一个值读一次、复用 8 次，
-SMEM 读指令与 FMA 的比例从 2:1 降到 1.125:1。
-
-这是第一个真正见效的寄存器级优化：把数据从 SMEM 再往寄存器搬一层。
-
-### k4 → k5：2D 寄存器分块（1.90×）
-
-把 8×1 的「柱子」换成 8×8 的方阵。每个 `dotIdx` 读 16 个操作数、做 64 次 FMA，
-LDS/FMA 从 1.125 降到 0.25，A 和 B 同时被复用。
-
-代价是寄存器压力：64 个累加器 + 16 个操作数，约 90 个寄存器/线程，occupancy 明显下降。
-收益没有 LDS 降幅那么大，是典型的 Amdahl 现象——只优化了「SMEM 读」这一段。
-
-### k5 → k6：向量化（1.18×）
-
-用 `float4` 把 4 次标量加载合成一条 128-bit 指令，并把 As 在 SMEM 中转置成 `[BK][BM]`，
-让 A 的 SMEM 读也能用 `LDS.128`。
-
-收益有限：FMA 数量没变，SMEM 带宽没变，省下的只是指令条数。**向量化是锦上添花，
-应该在「已经算得够多」之后再做。**
-
-### k6 → k10：warp 分块（1.14×）
-
-前六个 kernel 里 warp 是硬件隐式划分的；k10 把 warp 这一层显式写进代码：128 个线程 =
-4 个 warp，每个 warp 负责 64×64 的 C 子块，每个线程管 128 个结果。
-
-这时 occupancy 只有 17%~25%，但性能反而最高——因为每个线程有 128 个互不依赖的 FMA，
-足够把流水线填满（ILP）。**occupancy 是手段，不是目标。**
-
-## 这张卡上的几个观察
-
-**1. 机器平衡点比上一代高得多。**
-RTX 4090 的 FP32 标称峰值 82.6 TFLOPS、显存带宽 1008 GB/s，平衡点约 **82 FLOP/B**。
-而 128×128 的 block tile 只能提供约 32 FLOP/B，理论上仍在内存受限区间。
-k5/k6/k10 能跑到 cuBLAS 的 67%~90%，很大程度靠 **72 MB 的 L2** 兜住了跨 block 复用。
-
-**2. 小尺寸严重失真。**
-128 维时 cuBLAS 只有 4.6 GFLOPS，比 512 维低三个数量级——一次 128³ 的 GEMM 只有
-4.2 MFLOP，50 次重复加起来还在毫秒级，冷启动、显存频率爬升、launch 开销全部被算进去。
-表中 128/256 两列只适合看趋势，不要拿来下结论。
-
-**3. 中间档存在非单调。**
-k4 在 2048 维是 20074.6，到 4096 维反而降到 18958.3；k6 同样从 43898.8 降到 42325.1。
-k5 和 k10 则继续上涨。这类回落通常来自 wave 量化（4096 维下每个 SM 分到的 block 数不整齐）
-与寄存器/occupancy 的相互作用，三轮扫描可复现同一趋势，不是噪声。
-
-## 测量口径与已知问题
-
-计时逻辑在 `sgemm.cu`：
-
-| 项目 | 设置 |
-| --- | --- |
-| 计时方式 | `cudaEvent`，包住 50 次 kernel launch |
-| 重复次数 | 50 |
-| 预热 | 正式计时前先跑一次正确性校验 |
-| 尺寸 | 128 / 256 / 512 / 1024 / 2048 / 4096 |
-| `alpha` / `beta` | 0.5 / 3.0 |
-| 参考实现 | cuBLAS FP32 |
-| FLOPs | `2·m·n·k` |
-| 正确性判据 | 绝对误差 < 0.01 |
-
-三点需要明确：
-
-1. **`beta = 3.0` 且计时循环内不重置 C。** 每跑一次 `C = αAB + 3C`，50 次后放大
-   `3^50 ≈ 7.2×10^23`。指令条数不变，计时仍然有效，但这不是好习惯，严谨做法是每次
-   重置 C 或令 `beta = 0`。
-2. **正确性用绝对误差 0.01，不随 K 缩放。** 4096 长度的点积用固定阈值，换一组数据
-   分布可能误判。更稳妥的是相对误差，或用 double 参考。
-3. **k5/k6/k10 没有边界检查**，要求 M、N、K 都是 tile 尺寸的整数倍。本项目只测 2 的幂，
-   不受影响；作为通用实现它是不完整的。
-
-表中数据由三轮完整扫描取中位数得到。测量期间 GPU 利用率 0%、核心频率 210 MHz（idle）、
-功耗 14~17 W，没有其他计算任务竞争；显存中有约 20.7 GB 被已退出的进程占用，
-不影响计算与带宽。
-
-## 硬件基线
-
-| 项目 | RTX 4090（AD102，`sm_89`） |
-| --- | ---: |
-| SM 数量 | 128 |
-| FP32 CUDA Core / SM | 128 |
-| FP32 标称峰值 | ≈ 82.6 TFLOPS |
-| 显存 | 24 GB GDDR6X |
-| 显存带宽 | 1008 GB/s |
-| L2 Cache | 72 MB |
-| 共享内存 / SM | 100 KB |
-| 寄存器 / SM | 65536 × 4B = 256 KB |
-| 机器平衡点 | 82.6 TFLOPS ÷ 1008 GB/s ≈ **82 FLOP/B** |
-
-`nvidia-smi` 报告该卡最大 SM 时钟为 3105 MHz；若按此频率计算理论峰值会更高。
-本表统一采用 2.52 GHz 参考加速频率，与公开规格一致，便于横向比较。
-
-## 目录结构
+## Repository layout
 
 ```
 cuda-info/
-├── sgemm.cu                     # 主程序：解析 kernel 编号、分配矩阵、校验、计时
-├── Makefile                     # build / run / bench / clean / submit
-├── CMakeLists.txt               # 架构可用 -DCUDA_COMPUTE_CAPABILITY 覆盖
+├── sgemm.cu                  # driver: kernel selection, allocation, verification, timing
+├── Makefile                  # build / run / bench / clean / submit
+├── CMakeLists.txt            # architecture overridable via -DCUDA_COMPUTE_CAPABILITY
 ├── src/
-│   ├── runner.cu                # kernel launch 封装、工具函数、run_kernel 总调度
+│   ├── runner.cu             # launch configuration, helpers, run_kernel dispatch
 │   ├── runner.cuh
-│   ├── kernels.cuh              # 汇总所有 kernel 头文件
-│   └── kernels/
-│       ├── 1_naive.cuh
-│       ├── 2_kernel_global_mem_coalesce.cuh
-│       ├── 3_kernel_shared_mem_blocking.cuh
-│       ├── 4_1D_blockTiling.cuh
-│       ├── 5_2D_blockTiling.cuh
-│       ├── 6_kernel_vectorize.cuh
-│       └── 10_kernel_warptiling.cuh
-└── notes/
-    └── cuda-compile-ref.md      # CUDA 编译命令速查
+│   ├── kernels.cuh
+│   └── kernels/              # one header per optimization stage
+├── results/rtx4090.json      # the measurements the figures and tables are generated from
+├── scripts/plot_results.py   # regenerates every figure from that JSON
+└── figs/                     # generated SVG/PNG
 ```
 
-kernel 编号从 6 跳到 10，沿用 Simon Boehm 原文的顺序：k7/k8 是消 bank conflict 的尝试
-（消掉了但整体更慢），k9 是自动调参，k10 是 warptiling。本项目保留 k10 的编号，方便与
-原文和笔记对照。
+Kernel numbering follows the source worklog: k7/k8 were attempts at removing
+shared-memory bank conflicts (the conflicts disappeared, the kernels got slower),
+k9 was autotuning, and k10 is warp tiling. The gap from 6 to 10 is kept so the
+numbering matches the reference material.
 
-## 参考
+## Measurement methodology
 
-1. Simon Boehm, [How to Optimize a CUDA Matmul Kernel for cuBLAS-like Performance: a Worklog](https://siboehm.com/articles/22/CUDA-MMM)
-2. Simon Boehm, [SGEMM_CUDA](https://github.com/siboehm/SGEMM_CUDA)
-3. NVIDIA, [CUDA C++ Programming Guide](https://docs.nvidia.com/cuda/cuda-c-programming-guide/)
-4. NVIDIA, [CUDA C++ Best Practices Guide](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/)
-5. wangzyon, [NVIDIA_SGEMM_PRACTICE](https://github.com/wangzyon/NVIDIA_SGEMM_PRACTICE) —— 计时框架的来源
-6. 完整推导与逐站讲解见配套笔记：[SGEMM 优化，从 naive 到 warptiling](https://blog.hanerson.com/2026/10/20/SGEMM-%E4%BC%98%E5%8C%96%E9%95%BF%E5%BE%81%E8%B7%AF/)
+| | |
+| --- | --- |
+| Timing | `cudaEvent` around 50 kernel launches |
+| Repetitions | 50 per size, median of 3 full passes |
+| Sizes | 128, 256, 512, 1024, 2048, 4096 |
+| `alpha` / `beta` | 0.5 / 3.0 |
+| Reference | cuBLAS FP32 |
+| FLOPs | `2 · M · N · K` |
+| Correctness | absolute error < 0.01 against cuBLAS |
+
+The measurements were taken on an idle GPU: 0% utilization, 210 MHz core clock,
+14–17 W board power, 39 °C, with no competing compute processes.
+
+### Known limitations
+
+These are properties of the harness, stated plainly because they bound what the
+table above can be used to claim:
+
+1. **`beta = 3.0` with no reset of C inside the timing loop.** Each iteration
+   computes `C = αAB + 3C`, so after 50 iterations the values have grown by
+   `3^50 ≈ 7.2 × 10^23`. The instruction count is unchanged so the timing remains
+   meaningful, but resetting C between iterations (or using `beta = 0`) is the
+   correct methodology.
+2. **A fixed absolute tolerance of 0.01 does not scale with K.** For a
+   length-4096 dot product a relative bound, or a double-precision reference,
+   would be more defensible.
+3. **k5, k6 and k10 have no bounds checking** and require M, N and K to be
+   multiples of the tile size. All measured sizes are powers of two, so this does
+   not affect the results, but these kernels are not general-purpose.
+4. **Small sizes are not representative.** cuBLAS reaches only 4.6 GFLOPS at
+   128³, three orders of magnitude below its result at 512³, because a single
+   128³ GEMM takes microseconds and 50 launches still total milliseconds — clock
+   ramp and launch overhead dominate. Treat the 128 and 256 columns as trend
+   indicators only.
+
+## Why 128 × 128 tiles are still memory-bound here
+
+The RTX 4090 has a peak of 82.6 TFLOPS and 1008 GB/s of memory bandwidth, giving
+a machine balance of roughly **82 FLOP/B**. A 128 × 128 block tile provides an
+arithmetic intensity of about 32 FLOP/B, below that balance point. The fact that
+k5/k6/k10 nonetheless reach 67–90% of cuBLAS is largely attributable to the
+**72 MB L2 cache**, which absorbs most of the inter-block reuse that the tile
+geometry alone cannot.
+
+## Data and reproducibility
+
+`results/rtx4090.json` holds every measurement together with the platform
+metadata. `scripts/plot_results.py` regenerates both figures from it:
+
+```bash
+python3 scripts/plot_results.py    # requires matplotlib
+```
+
+Re-running `make bench` on another GPU and updating that JSON refreshes the
+figures and makes the comparison explicit.
+
+## References
+
+1. Simon Boehm — [How to Optimize a CUDA Matmul Kernel for cuBLAS-like Performance: a Worklog](https://siboehm.com/articles/22/CUDA-MMM)
+2. Simon Boehm — [SGEMM_CUDA](https://github.com/siboehm/SGEMM_CUDA)
+3. NVIDIA — [CUDA C++ Programming Guide](https://docs.nvidia.com/cuda/cuda-c-programming-guide/)
+4. NVIDIA — [CUDA C++ Best Practices Guide](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/)
+5. wangzyon — [NVIDIA_SGEMM_PRACTICE](https://github.com/wangzyon/NVIDIA_SGEMM_PRACTICE) (timing harness)
+6. Companion write-up with the full derivation — [SGEMM 优化，从 naive 到 warptiling](https://blog.hanerson.com/2026/10/20/SGEMM-%E4%BC%98%E5%8C%96%E9%95%BF%E5%BE%81%E8%B7%AF/)
