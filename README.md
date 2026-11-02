@@ -2,6 +2,14 @@
 
 **English** | [中文](README.zh.md)
 
+<p>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-green.svg"></a>
+  <img alt="C++ / CUDA" src="https://img.shields.io/badge/C%2B%2B%20%2F%20CUDA-blue.svg">
+  <img alt="GPU: RTX 4090" src="https://img.shields.io/badge/GPU-RTX%204090-76b900.svg">
+  <img alt="CUDA 12.8" src="https://img.shields.io/badge/CUDA-12.8-76b900.svg">
+  <img alt="90.1% of cuBLAS" src="https://img.shields.io/badge/vs%20cuBLAS-90.1%25-5b2c83.svg">
+</p>
+
 A single-precision matrix multiplication (SGEMM) kernel taken from a naive
 implementation to **90.1% of cuBLAS FP32 throughput** on an NVIDIA RTX 4090,
 through seven progressively optimized kernels. Each step introduces exactly one

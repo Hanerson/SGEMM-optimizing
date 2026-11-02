@@ -2,6 +2,14 @@
 
 [English](README.md) | **中文**
 
+<p>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-green.svg"></a>
+  <img alt="C++ / CUDA" src="https://img.shields.io/badge/C%2B%2B%20%2F%20CUDA-blue.svg">
+  <img alt="GPU: RTX 4090" src="https://img.shields.io/badge/GPU-RTX%204090-76b900.svg">
+  <img alt="CUDA 12.8" src="https://img.shields.io/badge/CUDA-12.8-76b900.svg">
+  <img alt="90.1% of cuBLAS" src="https://img.shields.io/badge/vs%20cuBLAS-90.1%25-5b2c83.svg">
+</p>
+
 一个 FP32 SGEMM（单精度矩阵乘）的渐进优化项目。七个 CUDA kernel 从最朴素的实现出发，
 一步步走到接近 cuBLAS 的水平，每一步只引入一个核心思想：合并访存、共享内存分块、
 寄存器分块、向量化、warp 分块。
