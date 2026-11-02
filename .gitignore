@@ -1,0 +1,27 @@
+# Build output
+build/
+cmake-build-*/
+*.o
+*.obj
+*.ptx
+*.cubin
+*.fatbin
+*.so
+*.a
+compile_commands.json
+CMakeCache.txt
+CMakeFiles/
+
+# The compiled benchmark binary at the repository root
+target
+
+# Matrix dumps produced when verification fails
+matrixValidationFailure.txt
+
+# IDE and editor state
+.idea/
+.vscode/
+*.swp
+
+# macOS
+.DS_Store

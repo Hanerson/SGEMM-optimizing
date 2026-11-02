@@ -1,0 +1,10 @@
+# Normalise to LF in the repository and in every checkout.
+#
+# The Makefile is the important one: a CRLF Makefile fails on Linux with
+# "missing separator", and this project is built and benchmarked on Linux.
+* text=auto eol=lf
+
+# Binary-ish artefacts that must never be converted.
+*.png binary
+*.jpg binary
+*.pdf binary
